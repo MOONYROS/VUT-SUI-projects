@@ -32,12 +32,89 @@ class Tensor:
             if self.back_op is None:
                 raise ValueError(f'Cannot start backpropagation from a leaf!')
 
-            raise NotImplementedError(
-                'Backpropagation without deltas not implemented yet')
+            self.back_op.backward()
 
+
+class SumBackward:
+    def __init__(self, input_tensor):
+        self.input = input_tensor
+
+    def backward(self, grad_output):
+        self.input.grad += np.full(self.input.shape, grad_output)
+
+        if self.input.back_op:
+            self.input.back_op.backward(self.input.grad)
+
+
+class AddBackward:
+    def __init__(self, tensor_a, tensor_b):
+        self.tensor_a = tensor_a
+        self.tensor_b = tensor_b
+
+    def backward(self, grad_output):
+        self.tensor_a.grad += grad_output
+        self.tensor_b.grad += grad_output
+
+        if self.tensor_a.back_op:
+            self.tensor_a.back_op.backward(self.tensor_a.grad)
+        if self.tensor_b.back_op:
+            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+
+
+class SubtractBackward:
+    def __init__(self, tensor_a, tensor_b):
+        self.tensor_a = tensor_a
+        self.tensor_b = tensor_b
+
+    def backward(self, grad_output):
+        self.tensor_a.grad += grad_output
+        self.tensor_b.grad -= grad_output
+
+        if self.tensor_a.back_op:
+            self.tensor_a.back_op.backward(self.tensor_a.grad)
+        if self.tensor_b.back_op:
+            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+
+
+class MultiplyBackward:
+    def __init__(self, tensor_a, tensor_b):
+        self.tensor_a = tensor_a
+        self.tensor_b = tensor_b
+
+    def backward(self, grad_output):
+        self.tensor_a.grad += grad_output * self.tensor_b.value
+        self.tensor_b.grad += grad_output * self.tensor_a.value
+
+        if self.tensor_a.back_op:
+            self.tensor_a.back_op.backward(self.tensor_a.grad)
+        if self.tensor_b.back_op:
+            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+
+
+class ReLUBackward:
+    def __init__(self, input_tensor):
+        self.input = input_tensor
+
+    def backward(self, grad_output):
+        relu_grad = grad_output * (self.input.value > 0)
+        self.input.backward(relu_grad)
+
+class DotProductBackward:
+    def __init__(self, a, b):
+        self.tensor_a = a
+        self.tensor_b = b
+
+    def backward(self, grad_output):
+        self.tensor_a.grad += np.matmul(grad_output, self.tensor_b.value.T)
+        self.tensor_b.grad += np.matmul(self.tensor_a.value.T, grad_output)
+
+        if self.tensor_a.back_op:
+            self.tensor_a.back_op.backward(self.tensor_a.grad)
+        if self.tensor_b.back_op:
+            self.tensor_b.back_op.backward(self.tensor_b.grad)  
 
 def sui_sum(tensor: Tensor):
-    return Tensor(value=np.array([[np.sum(tensor.value)]]))
+    return Tensor(value=np.array([[np.sum(tensor.value)]]), back_op=SumBackward(tensor))
 
 
 def add(a: Tensor, b: Tensor):
@@ -45,7 +122,7 @@ def add(a: Tensor, b: Tensor):
         raise ValueError(
             f'Cannot add tensors with shapes {a.shape} and {b.shape}')
 
-    return Tensor(value=(a.value + b.value))
+    return Tensor(value=(a.value + b.value), back_op=AddBackward(a, b))
 
 
 def subtract(a: Tensor, b: Tensor):
@@ -53,7 +130,7 @@ def subtract(a: Tensor, b: Tensor):
         raise ValueError(
             f'Cannot subtract tensors with shapes {a.shape} and {b.shape}')
 
-    return Tensor(value=(a.value - b.value))
+    return Tensor(value=(a.value - b.value), back_op=SubtractBackward(a, b))
 
 
 def multiply(a: Tensor, b: Tensor):
@@ -61,11 +138,11 @@ def multiply(a: Tensor, b: Tensor):
         raise ValueError(
             f'Cannot multiply tensors with shapes {a.shape} and {b.shape}')
 
-    return Tensor(value=(a.value * b.value))
+    return Tensor(value=(a.value * b.value), back_op=MultiplyBackward(a, b))
 
 
 def relu(tensor: Tensor):
-    return Tensor(value=np.maximum(tensor.value, 0))
+    return Tensor(value=np.maximum(tensor.value, 0), back_op=ReLUBackward(tensor))
 
 
 def dot_product(a: Tensor, b: Tensor):
@@ -73,4 +150,4 @@ def dot_product(a: Tensor, b: Tensor):
         raise ValueError(
             # zmenit
             f'Cannot multiply tensors with shapes {a.shape} and {b.shape}')
-    return Tensor(value=np.matmul(a.value, b.value))
+    return Tensor(value=np.matmul(a.value, b.value), back_op=DotProductBackward(a, b))
