@@ -135,24 +135,28 @@ def main():
     eval_xs, eval_ys = sample_data(10)
 
     m1 = LinearModel(1, 1)
-    opt1 = st.StochasticGradientDescent(m1.parameters(), lr=1e-4)
+    opt1 = StochasticGradientDescent(m1.parameters(), lr=1e-4)
     train_model(m1, train_xs, train_ys, opt1, nb_epochs=args.nb_epochs)
-    print('Train loss:', evaluate_model(m1, train_xs, train_ys), 'eval:', evaluate_model(m1, eval_xs, eval_ys))
+    print('Train loss:', evaluate_model(m1, train_xs, train_ys),
+          'eval:', evaluate_model(m1, eval_xs, eval_ys))
 
     m2 = NonLinearModel(1, 5, 1)
-    opt2 = st.StochasticGradientDescent(m2.parameters(), lr=1e-5)
+    opt2 = StochasticGradientDescent(m2.parameters(), lr=1e-5)
     train_model(m2, train_xs, train_ys, opt2, nb_epochs=args.nb_epochs)
-    print('Train loss:', evaluate_model(m2, train_xs, train_ys), 'eval:', evaluate_model(m2, eval_xs, eval_ys))
+    print('Train loss:', evaluate_model(m2, train_xs, train_ys),
+          'eval:', evaluate_model(m2, eval_xs, eval_ys))
 
     m3 = NonLinearModel(1, 20, 1)
-    opt3 = st.StochasticGradientDescent(m3.parameters(), lr=1e-4)
+    opt3 = StochasticGradientDescent(m3.parameters(), lr=1e-4)
     train_model(m3, train_xs, train_ys, opt3, nb_epochs=args.nb_epochs)
-    print('Train loss:', evaluate_model(m3, train_xs, train_ys), 'eval:', evaluate_model(m3, eval_xs, eval_ys))
+    print('Train loss:', evaluate_model(m3, train_xs, train_ys),
+          'eval:', evaluate_model(m3, eval_xs, eval_ys))
 
     m4 = NonLinearModel(1, 50, 1)
-    opt4 = st.StochasticGradientDescent(m4.parameters(), lr=1e-4)
+    opt4 = StochasticGradientDescent(m4.parameters(), lr=1e-4)
     train_model(m4, train_xs, train_ys, opt4, nb_epochs=args.nb_epochs)
-    print('Train loss:', evaluate_model(m4, train_xs, train_ys), 'eval:', evaluate_model(m4, eval_xs, eval_ys))
+    print('Train loss:', evaluate_model(m4, train_xs, train_ys),
+          'eval:', evaluate_model(m4, eval_xs, eval_ys))
 
     if args.do_plots:
         plt.figure()

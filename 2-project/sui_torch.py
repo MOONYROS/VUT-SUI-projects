@@ -22,8 +22,8 @@ class Tensor:
             assert deltas.shape == self.value.shape, f'Expected gradient with shape {
                 self.value.shape}, got {deltas.shape}'
 
-            raise NotImplementedError(
-                'Backpropagation with deltas not implemented yet')
+            self.grad += deltas
+            self.back_op.backward(self.grad)
         else:
             if self.shape != tuple() and np.prod(self.shape) != 1:
                 raise ValueError(
@@ -32,7 +32,7 @@ class Tensor:
             if self.back_op is None:
                 raise ValueError(f'Cannot start backpropagation from a leaf!')
 
-            self.back_op.backward()
+            self.back_op.backward([[1]])
 
 
 class SumBackward:
@@ -58,7 +58,7 @@ class AddBackward:
         if self.tensor_a.back_op:
             self.tensor_a.back_op.backward(self.tensor_a.grad)
         if self.tensor_b.back_op:
-            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+            self.tensor_b.back_op.backward(self.tensor_b.grad)
 
 
 class SubtractBackward:
@@ -73,7 +73,7 @@ class SubtractBackward:
         if self.tensor_a.back_op:
             self.tensor_a.back_op.backward(self.tensor_a.grad)
         if self.tensor_b.back_op:
-            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+            self.tensor_b.back_op.backward(self.tensor_b.grad)
 
 
 class MultiplyBackward:
@@ -88,7 +88,7 @@ class MultiplyBackward:
         if self.tensor_a.back_op:
             self.tensor_a.back_op.backward(self.tensor_a.grad)
         if self.tensor_b.back_op:
-            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+            self.tensor_b.back_op.backward(self.tensor_b.grad)
 
 
 class ReLUBackward:
@@ -96,8 +96,10 @@ class ReLUBackward:
         self.input = input_tensor
 
     def backward(self, grad_output):
-        relu_grad = grad_output * (self.input.value > 0)
-        self.input.backward(relu_grad)
+        self.input.grad = grad_output * (self.input.value > 0)
+        if self.input.back_op:
+            self.input.back_op.backward(self.input.grad)
+
 
 class DotProductBackward:
     def __init__(self, a, b):
@@ -111,7 +113,8 @@ class DotProductBackward:
         if self.tensor_a.back_op:
             self.tensor_a.back_op.backward(self.tensor_a.grad)
         if self.tensor_b.back_op:
-            self.tensor_b.back_op.backward(self.tensor_b.grad)  
+            self.tensor_b.back_op.backward(self.tensor_b.grad)
+
 
 def sui_sum(tensor: Tensor):
     return Tensor(value=np.array([[np.sum(tensor.value)]]), back_op=SumBackward(tensor))
