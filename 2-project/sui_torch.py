@@ -19,38 +19,54 @@ class Tensor:
 
     def backward(self, deltas=None):
         if deltas is not None:
-            assert deltas.shape == self.value.shape, f'Expected gradient with shape {self.value.shape}, got {deltas.shape}'
+            assert deltas.shape == self.value.shape, f'Expected gradient with shape {
+                self.value.shape}, got {deltas.shape}'
 
-            raise NotImplementedError('Backpropagation with deltas not implemented yet')
+            raise NotImplementedError(
+                'Backpropagation with deltas not implemented yet')
         else:
             if self.shape != tuple() and np.prod(self.shape) != 1:
-                raise ValueError(f'Can only backpropagate a scalar, got shape {self.shape}')
+                raise ValueError(
+                    f'Can only backpropagate a scalar, got shape {self.shape}')
 
             if self.back_op is None:
                 raise ValueError(f'Cannot start backpropagation from a leaf!')
 
-            raise NotImplementedError('Backpropagation without deltas not implemented yet')
+            raise NotImplementedError(
+                'Backpropagation without deltas not implemented yet')
 
 
-def sui_sum(tensor):
+def sui_sum(tensor: Tensor):
+    return Tensor(value=np.array([[np.sum(tensor.value)]]))
+
+
+def add(a: Tensor, b: Tensor):
+    if a.shape != b.shape:
+        raise ValueError(
+            f'Cannot add tensors with shapes {a.shape} and {b.shape}')
+
+    return Tensor(value=(a.value + b.value))
+
+
+def subtract(a: Tensor, b: Tensor):
+    if a.shape != b.shape:
+        raise ValueError(
+            f'Cannot subtract tensors with shapes {a.shape} and {b.shape}')
+
+    return Tensor(value=(a.value - b.value))
+
+
+def multiply(a: Tensor, b: Tensor):
+    if a.shape != b.shape:
+        raise ValueError(
+            f'Cannot multiply tensors with shapes {a.shape} and {b.shape}')
+
+    return Tensor(value=(a.value * b.value))
+
+
+def relu(tensor: Tensor):
     raise NotImplementedError()
 
 
-def add(a, b):
-    raise NotImplementedError()
-
-
-def subtract(a, b):
-    raise NotImplementedError()
-
-
-def multiply(a, b):
-    raise NotImplementedError()
-
-
-def relu(tensor):
-    raise NotImplementedError()
-
-
-def dot_product(a, b):
+def dot_product(a: Tensor, b: Tensor):
     raise NotImplementedError()
