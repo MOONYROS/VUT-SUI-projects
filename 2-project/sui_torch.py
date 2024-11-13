@@ -65,8 +65,12 @@ def multiply(a: Tensor, b: Tensor):
 
 
 def relu(tensor: Tensor):
-    raise NotImplementedError()
+    return Tensor(value=np.maximum(tensor.value, 0))
 
 
 def dot_product(a: Tensor, b: Tensor):
-    raise NotImplementedError()
+    if a.shape[1] != b.shape[0]:
+        raise ValueError(
+            # zmenit
+            f'Cannot multiply tensors with shapes {a.shape} and {b.shape}')
+    return Tensor(value=np.matmul(a.value, b.value))

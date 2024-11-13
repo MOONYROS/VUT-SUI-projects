@@ -176,7 +176,3 @@ class TestBackpropagation(unittest.TestCase):
 
         assert_allclose(a.grad, e_a_grad)
         assert_allclose(b.grad, e_b_grad)
-
-
-if __name__ == '__main__':
-    unittest.main()
