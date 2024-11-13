@@ -91,7 +91,7 @@ class MultiplyBackward:
             self.tensor_b.back_op.backward(self.tensor_b.grad)
 
 
-class ReLUBackward:
+class ReluBackward:
     def __init__(self, input_tensor):
         self.input = input_tensor
 
@@ -145,12 +145,12 @@ def multiply(a: Tensor, b: Tensor):
 
 
 def relu(tensor: Tensor):
-    return Tensor(value=np.maximum(tensor.value, 0), back_op=ReLUBackward(tensor))
+    return Tensor(value=np.maximum(tensor.value, 0), back_op=ReluBackward(tensor))
 
 
 def dot_product(a: Tensor, b: Tensor):
     if a.shape[1] != b.shape[0]:
         raise ValueError(
-            # zmenit
-            f'Cannot multiply tensors with shapes {a.shape} and {b.shape}')
+            f'Cannot perform matrix multiplication on tensors with shapes {a.shape} and {b.shape}')
+
     return Tensor(value=np.matmul(a.value, b.value), back_op=DotProductBackward(a, b))
