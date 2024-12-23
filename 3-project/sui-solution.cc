@@ -1,10 +1,16 @@
 #include "search-interface.h"
 #include "search-strategies.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
+
+using SearchStatePtr = std::shared_ptr<SearchState>;
+using SearchActionPtr = std::shared_ptr<SearchAction>;
 
 struct CardHash
 {
@@ -45,23 +51,23 @@ struct GameStateHash
 {
     std::size_t operator()(const GameState& gs) const
     {
-        std::size_t h = 0;
+        std::size_t hash = 0;
 
         for (const auto& home : gs.homes) {
             if (home.topCard().has_value()) {
-                h ^= CardHash()(*home.topCard());
+                hash ^= CardHash()(*home.topCard());
             }
         }
 
         for (const auto& free_cell : gs.free_cells) {
-            h ^= FreeCellHash()(free_cell);
+            hash ^= FreeCellHash()(free_cell);
         }
 
         for (const auto& stack : gs.stacks) {
-            h ^= WorkStackHash()(stack);
+            hash ^= WorkStackHash()(stack);
         }
 
-        return h;
+        return hash;
     }
 };
 
@@ -72,9 +78,9 @@ std::size_t hash(const SearchState& state)
 
 struct SearchStateHash
 {
-    std::size_t operator()(const SearchState& s) const
+    std::size_t operator()(const SearchStatePtr& s) const
     {
-        return hash(s);
+        return hash(*s);
     }
 };
 
@@ -86,27 +92,43 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
 std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
 {
-    std::unordered_set<SearchState, SearchStateHash> closed;
-    std::queue<SearchState> open;
+    std::unordered_set<SearchStatePtr, SearchStateHash> closed;
+    std::unordered_map<SearchStatePtr,
+                       std::pair<SearchStatePtr, SearchActionPtr>,
+                       SearchStateHash>
+        statePredecessors;
+    std::queue<SearchStatePtr> open;
     std::vector<SearchAction> solution;
 
-    open.push(init_state);  // enqueue
+    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
+    open.push(init_ptr);
 
     while (!open.empty()) {
-        SearchState current = open.front();
-        open.pop();  // dequeue
-        if (current.isFinal()) {
-            // TODO: not sure how to work with SearchAction yet
-            return {};
+        SearchStatePtr currentState = open.front();
+        open.pop();
+
+        if (currentState->isFinal()) {
+            while (statePredecessors.find(currentState)
+                   != statePredecessors.end()) {
+                auto [previousState, action] = statePredecessors[currentState];
+                solution.push_back(*action);
+                currentState = previousState;
+            }
+            std::reverse(solution.begin(), solution.end());
+            return solution;
         }
 
-        closed.insert(current);
-        for (const auto& action : current.actions()) {
-            SearchState next = action.execute(current);
+        closed.insert(currentState);
+        for (const SearchAction& action : currentState->actions()) {
+            SearchStatePtr nextState =
+                std::make_shared<SearchState>(action.execute(*currentState));
 
-            // if not in closed
-            if (closed.find(next) == closed.end()) {
-                open.push(next);
+            if (closed.find(nextState) == closed.end()) {
+                open.push(nextState);
+                SearchActionPtr action_ptr =
+                    std::make_shared<SearchAction>(action);
+                statePredecessors[nextState] =
+                    std::make_pair(currentState, action_ptr);
             }
         }
     }
