@@ -93,29 +93,17 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
 {
     std::unordered_set<SearchStatePtr, SearchStateHash> closed;
-    std::unordered_map<SearchStatePtr,
-                       std::pair<SearchStatePtr, SearchActionPtr>,
-                       SearchStateHash>
-        statePredecessors;
-    std::queue<SearchStatePtr> open;
-    std::vector<SearchAction> solution;
+    std::queue<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
 
     SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    open.push(init_ptr);
+    open.push({ init_ptr, {} });
 
     while (!open.empty()) {
-        SearchStatePtr currentState = open.front();
+        auto& [currentState, currentPath] = open.front();
         open.pop();
 
         if (currentState->isFinal()) {
-            while (statePredecessors.find(currentState)
-                   != statePredecessors.end()) {
-                auto [previousState, action] = statePredecessors[currentState];
-                solution.push_back(*action);
-                currentState = previousState;
-            }
-            std::reverse(solution.begin(), solution.end());
-            return solution;
+            return currentPath;
         }
 
         closed.insert(currentState);
@@ -124,11 +112,9 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
                 std::make_shared<SearchState>(action.execute(*currentState));
 
             if (closed.find(nextState) == closed.end()) {
-                open.push(nextState);
-                SearchActionPtr action_ptr =
-                    std::make_shared<SearchAction>(action);
-                statePredecessors[nextState] =
-                    std::make_pair(currentState, action_ptr);
+                auto nextPath = currentPath;
+                nextPath.push_back(action);
+                open.push({ nextState, nextPath });
             }
         }
     }
