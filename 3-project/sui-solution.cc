@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <iostream>
 #include <queue>
 #include <unordered_map>
@@ -13,6 +14,7 @@
 
 using SearchStatePtr = std::shared_ptr<SearchState>;
 using SearchActionPtr = std::shared_ptr<SearchAction>;
+using PathToState = std::vector<SearchAction>;
 
 struct CardHash
 {
@@ -95,10 +97,10 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
 {
     std::unordered_set<SearchStatePtr, SearchStateHash> closed;
-    std::queue<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
+    std::queue<std::pair<SearchStatePtr, PathToState>> open;
 
     SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    open.emplace(std::make_pair(init_ptr, std::vector<SearchAction> {}));
+    open.emplace(std::make_pair(init_ptr, PathToState {}));
 
     int counter = 0;
     while (!open.empty()) {
@@ -115,7 +117,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
                 std::make_shared<SearchState>(action.execute(*currentState));
 
             if (closed.find(nextState) == closed.end()) {
-                std::vector<SearchAction> nextPath = currentPath;
+                PathToState nextPath = currentPath;
                 nextPath.push_back(action);
                 open.emplace(std::make_pair(nextState, nextPath));
             }
@@ -141,7 +143,56 @@ double StudentHeuristic::distanceLowerBound(const GameState& state) const
     return 0;
 }
 
+struct AStarState
+{
+    SearchStatePtr state;
+    double g;
+    double h;
+    double f;
+};
+
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
+    auto sort = [](const std::pair<AStarState, PathToState>& lhs,
+                   const std::pair<AStarState, PathToState>& rhs) {
+        return lhs.first.f > rhs.first.f;
+    };
+
+    std::priority_queue<std::pair<AStarState, PathToState>,
+                        std::vector<std::pair<AStarState, PathToState>>,
+                        decltype(sort)>
+        open(sort);
+    std::unordered_set<SearchStatePtr, SearchStateHash> closed;
+
+    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
+    double h = compute_heuristic(init_state, *heuristic_);
+    open.emplace(
+        std::make_pair(AStarState { init_ptr, 0, h, h }, PathToState {}));
+
+    while (!open.empty()) {
+        auto [currentNode, currentPath] = open.top();
+        open.pop();
+
+        if (currentNode.state->isFinal()) {
+            return currentPath;
+        }
+
+        closed.insert(currentNode.state);
+        for (const SearchAction& action : currentNode.state->actions()) {
+            SearchStatePtr nextState = std::make_shared<SearchState>(
+                action.execute(*currentNode.state));
+
+            if (closed.find(nextState) == closed.end()) {
+                PathToState nextPath = currentPath;
+                nextPath.push_back(action);
+                double g = currentNode.g + 1;
+                double h = compute_heuristic(*nextState, *heuristic_);
+                double f = g + h;
+                open.emplace(std::make_pair(AStarState { nextState, g, h, f },
+                                            nextPath));
+            }
+        }
+    }
+
     return {};
 }
