@@ -98,8 +98,9 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     std::queue<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
 
     SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    open.push({ init_ptr, {} });
+    open.emplace(std::make_pair(init_ptr, std::vector<SearchAction> {}));
 
+    int counter = 0;
     while (!open.empty()) {
         auto [currentState, currentPath] = open.front();
         open.pop();
@@ -114,14 +115,16 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
                 std::make_shared<SearchState>(action.execute(*currentState));
 
             if (closed.find(nextState) == closed.end()) {
-                auto nextPath = currentPath;
+                std::vector<SearchAction> nextPath = currentPath;
                 nextPath.push_back(action);
-                open.push({ nextState, nextPath });
+                open.emplace(std::make_pair(nextState, nextPath));
             }
         }
 
+        constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
-        if (getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+        if (++counter % checkInterval == 0
+            && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
             return {};
         }
     }
