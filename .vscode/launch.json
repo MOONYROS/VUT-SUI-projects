@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "Debug",
+            "program": "${workspaceFolder}/3-project/fc-sui",
+            "args": [
+                "--easy-mode",
+                "10",
+                "--solver",
+                "bfs",
+                "5",
+                "4"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

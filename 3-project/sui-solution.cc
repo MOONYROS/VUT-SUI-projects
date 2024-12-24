@@ -99,7 +99,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     open.push({ init_ptr, {} });
 
     while (!open.empty()) {
-        auto& [currentState, currentPath] = open.front();
+        auto [currentState, currentPath] = open.front();
         open.pop();
 
         if (currentState->isFinal()) {
