@@ -1,8 +1,10 @@
+#include "memusage.h"
 #include "search-interface.h"
 #include "search-strategies.h"
 
 #include <algorithm>
 #include <cstddef>
+#include <iostream>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
@@ -116,6 +118,11 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
                 nextPath.push_back(action);
                 open.push({ nextState, nextPath });
             }
+        }
+
+        constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
+        if (getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            return {};
         }
     }
     return {};
