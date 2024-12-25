@@ -139,6 +139,59 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
 
 std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
 {
+    unsigned long depth_limit = this->depth_limit_;
+
+    // closed seznam - podle rady to delam spis jako map
+    std::unordered_map<SearchStatePtr,
+                       std::vector<SearchAction>,
+                       SearchStateHash>
+        closed;
+    // zasobnik open, dfs chodi po zasobniku (pushuje, popuje)
+    std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
+
+    // inicializace jako v bfs
+    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
+    open.push({ init_ptr, {} });
+
+    // dokud neni zasobnik prazdny, tak valim
+    while (!open.empty()) {
+        // vezmu si vrsek zasobniku
+        auto [currentState, currentPath] = open.top();
+        open.pop();
+
+        // pokud jsem v cili, tak koncim a vracim cestu
+        if (currentState->isFinal()) {
+            return currentPath;
+        }
+
+        // pokud jsem presahl hloubku, tak pokracuji dal
+        if (currentPath.size() > depth_limit) {
+            continue;
+        }
+
+        // zkontroluju, jestli jsem uz stav videl (je v closed)
+        if (closed.find(currentState) == closed.end()) {
+            closed[currentState] = currentPath;
+
+            // projdu kazdou akci, kterou muzu udelat
+            for (const SearchAction& action : currentState->actions()) {
+                // vytvorim novy stav
+                SearchStatePtr nextState = std::make_shared<SearchState>(
+                    action.execute(*currentState));
+
+                // zkontroluji, jestli uz stav neni v closed mape
+                if (closed.find(nextState) == closed.end()) {
+                    // vytvotim si novou cestu
+                    auto nextPath = currentPath;
+                    nextPath.push_back(action);
+
+                    // a vlozim na zasobnik stav i cestu
+                    open.push({ nextState, nextPath });
+                }
+            }
+        }
+    }
+
     return {};
 }
 
