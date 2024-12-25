@@ -2,11 +2,9 @@
 #include "search-interface.h"
 #include "search-strategies.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
@@ -139,7 +137,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
 
 std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
 {
-    unsigned long depth_limit = this->depth_limit_;
+    std::size_t depth_limit = this->depth_limit_;
 
     // closed seznam - podle rady to delam spis jako map
     std::unordered_map<SearchStatePtr,
