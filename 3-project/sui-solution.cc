@@ -139,6 +139,9 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
 {
     std::size_t depth_limit = this->depth_limit_;
 
+    // vlastni limit pro pamet - 50MB pod hard limitem
+    std::size_t lower_mem_limit = this->mem_limit_ - 50 * 1024 * 1024;
+
     // closed seznam - podle rady to delam spis jako map
     std::unordered_map<SearchStatePtr,
                        std::vector<SearchAction>,
@@ -153,6 +156,11 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
 
     // dokud neni zasobnik prazdny, tak valim
     while (!open.empty()) {
+        // kontrola pameti - pokud se blizim limitu, vracim prazdnou cestu
+        if (getCurrentRSS() > lower_mem_limit) {
+            return {};
+        }
+
         // vezmu si vrsek zasobniku
         auto [currentState, currentPath] = open.top();
         open.pop();
@@ -167,7 +175,7 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
             continue;
         }
 
-        // zkontroluju, jestli jsem uz stav videl (je v closed)
+        // zkontroluji, jestli jsem uz stav videl (je v closed)
         if (closed.find(currentState) == closed.end()) {
             closed[currentState] = currentPath;
 
