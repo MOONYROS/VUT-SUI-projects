@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <queue>
@@ -93,16 +94,19 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
     return lhs.state_ == rhs.state_;
 }
 
+using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
+using OpenQueue = std::queue<std::pair<SearchStatePtr, PathToState>>;
+
 std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
 {
-    std::unordered_set<SearchStatePtr, SearchStateHash> closed;
-    std::queue<std::pair<SearchStatePtr, PathToState>> open;
+    ClosedSet closed;
+    OpenQueue open;
 
     SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
     open.emplace(std::make_pair(init_ptr, PathToState {}));
 
-    int counter = 0;
+    std::uint64_t counter = 0;
     while (!open.empty()) {
         auto [currentState, currentPath] = open.front();
         open.pop();
@@ -151,6 +155,12 @@ struct AStarState
     double f;
 };
 
+using PriorityQueue = std::priority_queue<
+    std::pair<AStarState, PathToState>,
+    std::vector<std::pair<AStarState, PathToState>>,
+    std::function<bool(const std::pair<AStarState, PathToState>,
+                       const std::pair<AStarState, PathToState>)>>;
+
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
     auto sort = [](const std::pair<AStarState, PathToState>& lhs,
@@ -158,17 +168,15 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
         return lhs.first.f > rhs.first.f;
     };
 
-    std::priority_queue<std::pair<AStarState, PathToState>,
-                        std::vector<std::pair<AStarState, PathToState>>,
-                        decltype(sort)>
-        open(sort);
-    std::unordered_set<SearchStatePtr, SearchStateHash> closed;
+    PriorityQueue open(sort);
+    ClosedSet closed;
 
     SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
     double h = compute_heuristic(init_state, *heuristic_);
     open.emplace(
         std::make_pair(AStarState { init_ptr, 0, h, h }, PathToState {}));
 
+    std::uint64_t counter = 0;
     while (!open.empty()) {
         auto [currentNode, currentPath] = open.top();
         open.pop();
@@ -191,6 +199,13 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
                 open.emplace(std::make_pair(AStarState { nextState, g, h, f },
                                             nextPath));
             }
+        }
+
+        constexpr int checkInterval = 1000;
+        constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
+        if (++counter % checkInterval == 0
+            && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            return {};
         }
     }
 
