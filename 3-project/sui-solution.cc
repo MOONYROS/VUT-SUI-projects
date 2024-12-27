@@ -2,6 +2,7 @@
 #include "search-interface.h"
 #include "search-strategies.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -63,39 +64,63 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
     return lhs.state_ == rhs.state_;
 }
 
-using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
-using OpenQueue = std::queue<std::pair<SearchStatePtr, PathToState>>;
+struct TreeNode
+{
+    std::shared_ptr<TreeNode> parent;
+    SearchActionPtr action;
+    std::shared_ptr<SearchState> state;
 
-std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState& init_state)
+    TreeNode(std::shared_ptr<TreeNode> parent,
+             SearchActionPtr action,
+             std::shared_ptr<SearchState> state)
+        : parent(parent),
+          action(std::move(action)),
+          state(std::move(state))
+    {
+    }
+};
+
+using TreeNodePtr = std::shared_ptr<TreeNode>;
+
+using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
+using OpenQueue = std::queue<TreeNodePtr>;
+
+std::vector<SearchAction> BreadthFirstSearch::solve(
+    const SearchState& init_state)
 {
     ClosedSet closed;
     OpenQueue open;
 
     SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
-    open.emplace(std::make_pair(initPtr, PathToState {}));
+    open.emplace(std::make_shared<TreeNode>(nullptr, nullptr, initPtr));
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
-        auto [currentState, currentPath] = open.front();
+        TreeNodePtr currentState = open.front();
         open.pop();
 
-        closed.insert(currentState);
-        for (const SearchAction& action : currentState->actions()) {
-            SearchStatePtr nextState = std::make_shared<SearchState>(action.execute(*currentState));
+        closed.insert(currentState->state);
+        for (const SearchAction& action : currentState->state->actions()) {
+            SearchStatePtr nextState = std::make_shared<SearchState>(
+                action.execute(*currentState->state));
 
             if (closed.find(nextState) == closed.end()) {
-                PathToState nextPath = currentPath;
-                nextPath.push_back(std::make_shared<SearchAction>(action));
-
                 if (nextState->isFinal()) {
                     std::vector<SearchAction> path;
-                    for (const auto& actionPtr : nextPath) {
-                        path.push_back(*actionPtr);
+                    path.push_back(action);
+                    while (currentState->action != nullptr) {
+                        path.push_back(*currentState->action);
+                        currentState = currentState->parent;
                     }
+                    std::reverse(path.begin(), path.end());
                     return path;
                 }
 
-                open.emplace(std::make_pair(nextState, nextPath));
+                TreeNodePtr nextNode = std::make_shared<TreeNode>(
+                    currentState,
+                    std::make_shared<SearchAction>(action),
+                    nextState);
+                open.emplace(nextNode);
             }
         }
 
@@ -117,7 +142,10 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
     std::size_t lower_mem_limit = this->mem_limit_ - 50 * 1024 * 1024;
 
     // closed seznam - podle rady to delam spis jako map
-    std::unordered_map<SearchStatePtr, std::vector<SearchAction>, SearchStateHash> closed;
+    std::unordered_map<SearchStatePtr,
+                       std::vector<SearchAction>,
+                       SearchStateHash>
+        closed;
     // zasobnik open, dfs chodi po zasobniku (pushuje, popuje)
     std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
 
@@ -153,8 +181,8 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
             // projdu kazdou akci, kterou muzu udelat
             for (const SearchAction& action : currentState->actions()) {
                 // vytvorim novy stav
-                SearchStatePtr nextState =
-                    std::make_shared<SearchState>(action.execute(*currentState));
+                SearchStatePtr nextState = std::make_shared<SearchState>(
+                    action.execute(*currentState));
 
                 // zkontroluji, jestli uz stav neni v closed mape
                 if (closed.find(nextState) == closed.end()) {
@@ -184,11 +212,11 @@ struct AStarState
     double f;
 };
 
-using PriorityQueue =
-    std::priority_queue<std::pair<AStarState, PathToState>,
-                        std::vector<std::pair<AStarState, PathToState>>,
-                        std::function<bool(const std::pair<AStarState, PathToState>,
-                                           const std::pair<AStarState, PathToState>)>>;
+using PriorityQueue = std::priority_queue<
+    std::pair<AStarState, PathToState>,
+    std::vector<std::pair<AStarState, PathToState>>,
+    std::function<bool(const std::pair<AStarState, PathToState>,
+                       const std::pair<AStarState, PathToState>)>>;
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
@@ -219,15 +247,16 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 
         closed.insert(currentNode.state);
         for (const SearchAction& action : currentNode.state->actions()) {
-            SearchStatePtr nextState =
-                std::make_shared<SearchState>(action.execute(*currentNode.state));
+            SearchStatePtr nextState = std::make_shared<SearchState>(
+                action.execute(*currentNode.state));
 
             if (closed.find(nextState) == closed.end()) {
                 PathToState nextPath = currentPath;
                 nextPath.push_back(std::make_shared<SearchAction>(action));
                 double g = currentNode.g + 1;
                 double f = g + compute_heuristic(*nextState, *heuristic_);
-                open.emplace(std::make_pair(AStarState { nextState, g, f }, nextPath));
+                open.emplace(
+                    std::make_pair(AStarState { nextState, g, f }, nextPath));
             }
         }
 
