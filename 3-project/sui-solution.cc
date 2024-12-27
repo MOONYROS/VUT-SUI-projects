@@ -22,29 +22,36 @@ std::size_t cardHash(const Card& card)
     std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
     std::size_t h2 = std::hash<int>()(card.value);
 
-    return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    h1 = (h1 << 13) | (h1 >> (sizeof(std::size_t) * 8 - 13));
+    return h1 * 31 + h2;
 }
 
 std::size_t hash(const SearchState& state)
 {
     const GameState& gs = state.state_;
-    std::size_t hash = 0;
+    std::size_t hash = 17;
 
     for (const auto& home : gs.homes) {
         if (home.topCard().has_value()) {
-            hash ^= cardHash(*home.topCard());
+            std::size_t card_hash = cardHash(*home.topCard());
+            hash = (hash << 5) | (hash >> (sizeof(std::size_t) * 8 - 5));
+            hash = hash * 31 + card_hash;
         }
     }
 
     for (const auto& free_cell : gs.free_cells) {
         if (free_cell.topCard().has_value()) {
-            hash ^= cardHash(*free_cell.topCard());
+            std::size_t card_hash = cardHash(*free_cell.topCard());
+            hash = (hash << 5) | (hash >> (sizeof(std::size_t) * 8 - 5));
+            hash = hash * 31 + card_hash;
         }
     }
 
     for (const auto& stack : gs.stacks) {
         for (const auto& card : stack.storage()) {
-            hash ^= cardHash(card);
+            std::size_t card_hash = cardHash(card);
+            hash = (hash << 5) | (hash >> (sizeof(std::size_t) * 8 - 5));
+            hash = hash * 31 + card_hash;
         }
     }
 
