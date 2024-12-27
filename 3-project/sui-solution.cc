@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <queue>
+#include <stack>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -15,7 +16,7 @@ using SearchStatePtr = std::shared_ptr<SearchState>;
 using SearchActionPtr = std::shared_ptr<SearchAction>;
 using PathToState = std::vector<SearchActionPtr>;
 
-std::size_t cardHash(const Card& card) 
+std::size_t cardHash(const Card& card)
 {
     std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
     std::size_t h2 = std::hash<int>()(card.value);
@@ -65,39 +66,42 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
 using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
 using OpenQueue = std::queue<std::pair<SearchStatePtr, PathToState>>;
 
-std::vector<SearchAction> BreadthFirstSearch::solve(
-    const SearchState& init_state)
+std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState& init_state)
 {
     ClosedSet closed;
     OpenQueue open;
 
-    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    open.emplace(std::make_pair(init_ptr, PathToState {}));
+    SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
+    open.emplace(std::make_pair(initPtr, PathToState {}));
 
-    std::uint64_t counter = 0;
+    std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
         auto [currentState, currentPath] = open.front();
         open.pop();
 
-        if (currentState->isFinal()) {
-            return currentPath;
-        }
-
         closed.insert(currentState);
         for (const SearchAction& action : currentState->actions()) {
-            SearchStatePtr nextState =
-                std::make_shared<SearchState>(action.execute(*currentState));
+            SearchStatePtr nextState = std::make_shared<SearchState>(action.execute(*currentState));
 
             if (closed.find(nextState) == closed.end()) {
                 PathToState nextPath = currentPath;
-                nextPath.push_back(action);
+                nextPath.push_back(std::make_shared<SearchAction>(action));
+
+                if (nextState->isFinal()) {
+                    std::vector<SearchAction> path;
+                    for (const auto& actionPtr : nextPath) {
+                        path.push_back(*actionPtr);
+                    }
+                    return path;
+                }
+
                 open.emplace(std::make_pair(nextState, nextPath));
             }
         }
 
         constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
-        if (++counter % checkInterval == 0
+        if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
             return {};
         }
@@ -113,10 +117,7 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
     std::size_t lower_mem_limit = this->mem_limit_ - 50 * 1024 * 1024;
 
     // closed seznam - podle rady to delam spis jako map
-    std::unordered_map<SearchStatePtr,
-                       std::vector<SearchAction>,
-                       SearchStateHash>
-        closed;
+    std::unordered_map<SearchStatePtr, std::vector<SearchAction>, SearchStateHash> closed;
     // zasobnik open, dfs chodi po zasobniku (pushuje, popuje)
     std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
 
@@ -152,8 +153,8 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
             // projdu kazdou akci, kterou muzu udelat
             for (const SearchAction& action : currentState->actions()) {
                 // vytvorim novy stav
-                SearchStatePtr nextState = std::make_shared<SearchState>(
-                    action.execute(*currentState));
+                SearchStatePtr nextState =
+                    std::make_shared<SearchState>(action.execute(*currentState));
 
                 // zkontroluji, jestli uz stav neni v closed mape
                 if (closed.find(nextState) == closed.end()) {
@@ -180,15 +181,14 @@ struct AStarState
 {
     SearchStatePtr state;
     double g;
-    double h;
     double f;
 };
 
-using PriorityQueue = std::priority_queue<
-    std::pair<AStarState, PathToState>,
-    std::vector<std::pair<AStarState, PathToState>>,
-    std::function<bool(const std::pair<AStarState, PathToState>,
-                       const std::pair<AStarState, PathToState>)>>;
+using PriorityQueue =
+    std::priority_queue<std::pair<AStarState, PathToState>,
+                        std::vector<std::pair<AStarState, PathToState>>,
+                        std::function<bool(const std::pair<AStarState, PathToState>,
+                                           const std::pair<AStarState, PathToState>)>>;
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
@@ -202,37 +202,38 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 
     SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
     double h = compute_heuristic(init_state, *heuristic_);
-    open.emplace(
-        std::make_pair(AStarState { init_ptr, 0, h, h }, PathToState {}));
+    open.emplace(std::make_pair(AStarState { init_ptr, 0, h }, PathToState {}));
 
-    std::uint64_t counter = 0;
+    std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
         auto [currentNode, currentPath] = open.top();
         open.pop();
 
         if (currentNode.state->isFinal()) {
-            return currentPath;
+            std::vector<SearchAction> path;
+            for (const auto& actionPtr : currentPath) {
+                path.push_back(*actionPtr);
+            }
+            return path;
         }
 
         closed.insert(currentNode.state);
         for (const SearchAction& action : currentNode.state->actions()) {
-            SearchStatePtr nextState = std::make_shared<SearchState>(
-                action.execute(*currentNode.state));
+            SearchStatePtr nextState =
+                std::make_shared<SearchState>(action.execute(*currentNode.state));
 
             if (closed.find(nextState) == closed.end()) {
                 PathToState nextPath = currentPath;
-                nextPath.push_back(action);
+                nextPath.push_back(std::make_shared<SearchAction>(action));
                 double g = currentNode.g + 1;
-                double h = compute_heuristic(*nextState, *heuristic_);
-                double f = g + h;
-                open.emplace(std::make_pair(AStarState { nextState, g, h, f },
-                                            nextPath));
+                double f = g + compute_heuristic(*nextState, *heuristic_);
+                open.emplace(std::make_pair(AStarState { nextState, g, f }, nextPath));
             }
         }
 
         constexpr int checkInterval = 1000;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
-        if (++counter % checkInterval == 0
+        if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
             return {};
         }
