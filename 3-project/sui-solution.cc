@@ -24,6 +24,10 @@ inline void printMemoryLimitExceeded()
     std::cerr << boldRed << "Memory limit reached" << reset << std::endl;
 }
 
+// Hashovaci funkce - mix ruznych shiftu, oru, nasobeni prvocisly,...
+// Dost konzultovano s umelou inteligenci, mela by byt dostatecne unikatni a
+// rychla.
+
 std::size_t cardHash(const Card& card)
 {
     std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
@@ -77,6 +81,10 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
 {
     return lhs.state_ == rhs.state_;
 }
+
+// Optimalizace BFS - pouziti uzlu, ktery obsahuje pointer na rodice a akci, ze
+// ktere byl stav vytvoren. Jednoducha rekonstrukce cesty - poskakani od
+// koncoveho stavu smerem k inicialnimu.
 
 struct BFSTreeNode
 {
@@ -135,6 +143,8 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
                     std::make_shared<SearchAction>(action),
                     nextState);
 
+                // Optimalizace - nez vubec dam uzel do open, zkontroluji,
+                // jestli uz neni cilovy.
                 if (nextState->isFinal()) {
                     return retrieveSearchPath(nextNode);
                 }
@@ -143,6 +153,9 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
             }
         }
 
+        // Mensi optimalizace - pristup do souboru je drahy. Parkrat jsem to
+        // zkousel, 100 je cislo, se kterou se mi vzdy podchytilo, kdyz jsem se
+        // blizil limitu. (Snad to tak bude fungovat i pri testovani.)
         constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
@@ -225,6 +238,8 @@ double StudentHeuristic::distanceLowerBound(const GameState& state) const
     return 0;
 }
 
+// Pro A* stejna optimalizace jako u BFS pomoci uzlu; konstrukce stromu.
+
 struct AStarTreeNode
 {
     std::shared_ptr<AStarTreeNode> parent;
@@ -267,6 +282,9 @@ using PriorityQueue = std::priority_queue<
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
+    // Vsechno stejny jako u BFS, vcetne optimalizaci, jen s tim, ze pouzivame
+    // prioritni frontu (max heap), sortujici funkce pod timto komentarem. Jeste
+    // se navic pocitaji f-hodnoty.
     auto sort = [](const AStarTreeNodePtr& lhs, const AStarTreeNodePtr& rhs) {
         return lhs->f > rhs->f;
     };
@@ -275,13 +293,12 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
     ClosedSet closed;
 
     SearchStatePtr initState = std::make_shared<SearchState>(init_state);
-    AStarTreeNodePtr initNode = std::make_shared<AStarTreeNode>(
+    open.emplace(std::make_shared<AStarTreeNode>(
         AStarTreeNode { nullptr,
                         nullptr,
                         initState,
                         0,
-                        compute_heuristic(init_state, *heuristic_) });
-    open.emplace(initNode);
+                        compute_heuristic(init_state, *heuristic_) }));
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
@@ -303,6 +320,8 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
                                     newG,
                                     newF });
 
+                // Taky stejna optimalizace jako u BFS - kontrola, jestli synove
+                // jsou koncovymi uzly nez jdou do open.
                 if (nextState->isFinal()) {
                     return retrieveSearchPath(nextNode);
                 }
@@ -310,6 +329,7 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
             }
         }
 
+        // Taky stejna optimalizace jako u BFS.
         constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
