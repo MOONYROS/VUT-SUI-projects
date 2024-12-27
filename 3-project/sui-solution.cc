@@ -74,8 +74,8 @@ struct TreeNode
              SearchActionPtr action,
              std::shared_ptr<SearchState> state)
         : parent(parent),
-          action(std::move(action)),
-          state(std::move(state))
+          action(action),
+          state(state)
     {
     }
 };
