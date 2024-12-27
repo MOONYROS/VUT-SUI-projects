@@ -17,6 +17,13 @@ using SearchStatePtr = std::shared_ptr<SearchState>;
 using SearchActionPtr = std::shared_ptr<SearchAction>;
 using PathToState = std::vector<SearchActionPtr>;
 
+inline void printMemoryLimitExceeded()
+{
+    const std::string boldRed = "\033[1;31m";
+    const std::string reset = "\033[0m";
+    std::cerr << boldRed << "Memory limit reached" << reset << std::endl;
+}
+
 std::size_t cardHash(const Card& card)
 {
     std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
@@ -71,15 +78,15 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
     return lhs.state_ == rhs.state_;
 }
 
-struct TreeNode
+struct BFSTreeNode
 {
-    std::shared_ptr<TreeNode> parent;
+    std::shared_ptr<BFSTreeNode> parent;
     SearchActionPtr action;
     std::shared_ptr<SearchState> state;
 
-    TreeNode(std::shared_ptr<TreeNode> parent,
-             SearchActionPtr action,
-             std::shared_ptr<SearchState> state)
+    BFSTreeNode(std::shared_ptr<BFSTreeNode> parent,
+                SearchActionPtr action,
+                std::shared_ptr<SearchState> state)
         : parent(parent),
           action(action),
           state(state)
@@ -87,10 +94,21 @@ struct TreeNode
     }
 };
 
-using TreeNodePtr = std::shared_ptr<TreeNode>;
+using BFSTreeNodePtr = std::shared_ptr<BFSTreeNode>;
+
+inline std::vector<SearchAction> retrieveSearchPath(BFSTreeNodePtr node)
+{
+    std::vector<SearchAction> path;
+    while (node->action != nullptr) {
+        path.push_back(*node->action);
+        node = node->parent;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
 
 using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
-using OpenQueue = std::queue<TreeNodePtr>;
+using OpenQueue = std::queue<BFSTreeNodePtr>;
 
 std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
@@ -99,11 +117,11 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     OpenQueue open;
 
     SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
-    open.emplace(std::make_shared<TreeNode>(nullptr, nullptr, initPtr));
+    open.emplace(std::make_shared<BFSTreeNode>(nullptr, nullptr, initPtr));
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
-        TreeNodePtr currentState = open.front();
+        BFSTreeNodePtr currentState = open.front();
         open.pop();
 
         closed.insert(currentState->state);
@@ -112,21 +130,15 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
                 action.execute(*currentState->state));
 
             if (closed.find(nextState) == closed.end()) {
-                if (nextState->isFinal()) {
-                    std::vector<SearchAction> path;
-                    path.push_back(action);
-                    while (currentState->action != nullptr) {
-                        path.push_back(*currentState->action);
-                        currentState = currentState->parent;
-                    }
-                    std::reverse(path.begin(), path.end());
-                    return path;
-                }
-
-                TreeNodePtr nextNode = std::make_shared<TreeNode>(
+                BFSTreeNodePtr nextNode = std::make_shared<BFSTreeNode>(
                     currentState,
                     std::make_shared<SearchAction>(action),
                     nextState);
+
+                if (nextState->isFinal()) {
+                    return retrieveSearchPath(nextNode);
+                }
+
                 open.emplace(nextNode);
             }
         }
@@ -135,6 +147,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            printMemoryLimitExceeded();
             return {};
         }
     }
@@ -212,65 +225,96 @@ double StudentHeuristic::distanceLowerBound(const GameState& state) const
     return 0;
 }
 
-struct AStarState
+struct AStarTreeNode
 {
+    std::shared_ptr<AStarTreeNode> parent;
+    SearchActionPtr action;
     SearchStatePtr state;
     double g;
     double f;
+
+    AStarTreeNode(std::shared_ptr<AStarTreeNode> parent,
+                  SearchActionPtr action,
+                  SearchStatePtr state,
+                  double g,
+                  double f)
+        : parent(parent),
+          action(action),
+          state(state),
+          g(g),
+          f(f)
+    {
+    }
 };
 
+using AStarTreeNodePtr = std::shared_ptr<AStarTreeNode>;
+
+inline std::vector<SearchAction> retrieveSearchPath(AStarTreeNodePtr node)
+{
+    std::vector<SearchAction> path;
+    while (node->action != nullptr) {
+        path.push_back(*node->action);
+        node = node->parent;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
 using PriorityQueue = std::priority_queue<
-    std::pair<AStarState, PathToState>,
-    std::vector<std::pair<AStarState, PathToState>>,
-    std::function<bool(const std::pair<AStarState, PathToState>,
-                       const std::pair<AStarState, PathToState>)>>;
+    AStarTreeNodePtr,
+    std::vector<AStarTreeNodePtr>,
+    std::function<bool(const AStarTreeNodePtr&, const AStarTreeNodePtr&)>>;
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
-    auto sort = [](const std::pair<AStarState, PathToState>& lhs,
-                   const std::pair<AStarState, PathToState>& rhs) {
-        return lhs.first.f > rhs.first.f;
+    auto sort = [](const AStarTreeNodePtr& lhs, const AStarTreeNodePtr& rhs) {
+        return lhs->f > rhs->f;
     };
 
     PriorityQueue open(sort);
     ClosedSet closed;
 
-    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    double h = compute_heuristic(init_state, *heuristic_);
-    open.emplace(std::make_pair(AStarState { init_ptr, 0, h }, PathToState {}));
+    SearchStatePtr initState = std::make_shared<SearchState>(init_state);
+    AStarTreeNodePtr initNode = std::make_shared<AStarTreeNode>(
+        AStarTreeNode { nullptr,
+                        nullptr,
+                        initState,
+                        0,
+                        compute_heuristic(init_state, *heuristic_) });
+    open.emplace(initNode);
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
-        auto [currentNode, currentPath] = open.top();
+        AStarTreeNodePtr currentNode = open.top();
         open.pop();
 
-        if (currentNode.state->isFinal()) {
-            std::vector<SearchAction> path;
-            for (const auto& actionPtr : currentPath) {
-                path.push_back(*actionPtr);
-            }
-            return path;
-        }
-
-        closed.insert(currentNode.state);
-        for (const SearchAction& action : currentNode.state->actions()) {
+        closed.insert(currentNode->state);
+        for (const SearchAction& action : currentNode->state->actions()) {
             SearchStatePtr nextState = std::make_shared<SearchState>(
-                action.execute(*currentNode.state));
+                action.execute(*currentNode->state));
 
             if (closed.find(nextState) == closed.end()) {
-                PathToState nextPath = currentPath;
-                nextPath.push_back(std::make_shared<SearchAction>(action));
-                double g = currentNode.g + 1;
-                double f = g + compute_heuristic(*nextState, *heuristic_);
-                open.emplace(
-                    std::make_pair(AStarState { nextState, g, f }, nextPath));
+                double newG = currentNode->g + 1;
+                double newF = newG + compute_heuristic(*nextState, *heuristic_);
+                AStarTreeNodePtr nextNode = std::make_shared<AStarTreeNode>(
+                    AStarTreeNode { currentNode,
+                                    std::make_shared<SearchAction>(action),
+                                    nextState,
+                                    newG,
+                                    newF });
+
+                if (nextState->isFinal()) {
+                    return retrieveSearchPath(nextNode);
+                }
+                open.emplace(nextNode);
             }
         }
 
-        constexpr int checkInterval = 1000;
+        constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            printMemoryLimitExceeded();
             return {};
         }
     }
