@@ -13,70 +13,40 @@
 
 using SearchStatePtr = std::shared_ptr<SearchState>;
 using SearchActionPtr = std::shared_ptr<SearchAction>;
-using PathToState = std::vector<SearchAction>;
+using PathToState = std::vector<SearchActionPtr>;
 
-struct CardHash
+std::size_t cardHash(const Card& card) 
 {
-    std::size_t operator()(const Card& card) const
-    {
-        std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
-        std::size_t h2 = std::hash<int>()(card.value);
+    std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
+    std::size_t h2 = std::hash<int>()(card.value);
 
-        // Nalezeno na internetech jako unikatni a ryhla hashovaci funkce
-        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-};
-
-struct FreeCellHash
-{
-    std::size_t operator()(const FreeCell& fc) const
-    {
-        if (fc.topCard().has_value()) {
-            return CardHash()(*fc.topCard());
-        }
-        return 0;
-    }
-};
-
-struct WorkStackHash
-{
-    std::size_t operator()(const WorkStack& ws) const
-    {
-        std::size_t h = 0;
-        for (const auto& card : ws.storage()) {
-            h ^= CardHash()(card);
-        }
-        return h;
-    }
-};
-
-struct GameStateHash
-{
-    std::size_t operator()(const GameState& gs) const
-    {
-        std::size_t hash = 0;
-
-        for (const auto& home : gs.homes) {
-            if (home.topCard().has_value()) {
-                hash ^= CardHash()(*home.topCard());
-            }
-        }
-
-        for (const auto& free_cell : gs.free_cells) {
-            hash ^= FreeCellHash()(free_cell);
-        }
-
-        for (const auto& stack : gs.stacks) {
-            hash ^= WorkStackHash()(stack);
-        }
-
-        return hash;
-    }
-};
+    return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+}
 
 std::size_t hash(const SearchState& state)
 {
-    return GameStateHash()(state.state_);
+    const GameState& gs = state.state_;
+    std::size_t hash = 0;
+
+    for (const auto& home : gs.homes) {
+        if (home.topCard().has_value()) {
+            hash ^= cardHash(*home.topCard());
+        }
+    }
+
+    for (const auto& free_cell : gs.free_cells) {
+        if (free_cell.topCard().has_value()) {
+            hash ^= cardHash(*free_cell.topCard());
+        }
+    }
+
+    for (const auto& stack : gs.stacks) {
+        for (const auto& card : stack.storage()) {
+            hash ^= cardHash(card);
+        }
+    }
+
+    return hash;
 }
 
 struct SearchStateHash
