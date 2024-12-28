@@ -31,7 +31,7 @@ inline void printMemoryLimitExceeded()
 
 std::size_t cardHash(const Card& card)
 {
-    std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
+    std::size_t h1 = std::hash<Color>()(card.color);
     std::size_t h2 = std::hash<int>()(card.value);
 
     h1 = (h1 << 13) | (h1 >> (sizeof(std::size_t) * 8 - 13));
