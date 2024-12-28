@@ -66,7 +66,8 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
 using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
 using OpenQueue = std::queue<std::pair<SearchStatePtr, PathToState>>;
 
-std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState& init_state)
+std::vector<SearchAction> BreadthFirstSearch::solve(
+    const SearchState& init_state)
 {
     ClosedSet closed;
     OpenQueue open;
@@ -81,7 +82,8 @@ std::vector<SearchAction> BreadthFirstSearch::solve(const SearchState& init_stat
 
         closed.insert(currentState);
         for (const SearchAction& action : currentState->actions()) {
-            SearchStatePtr nextState = std::make_shared<SearchState>(action.execute(*currentState));
+            SearchStatePtr nextState =
+                std::make_shared<SearchState>(action.execute(*currentState));
 
             if (closed.find(nextState) == closed.end()) {
                 PathToState nextPath = currentPath;
@@ -116,8 +118,12 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
     // vlastni limit pro pamet - 50MB pod hard limitem
     std::size_t lower_mem_limit = this->mem_limit_ - 50 * 1024 * 1024;
 
+    // pocitadla na kontrolu pameti
+    constexpr int checkInterval = 100;
+    int iterationCounter = 0;
+
     // closed seznam - podle rady to delam spis jako map
-    std::unordered_map<SearchStatePtr, std::vector<SearchAction>, SearchStateHash> closed;
+    std::unordered_set<SearchStatePtr, SearchStateHash> closed;
     // zasobnik open, dfs chodi po zasobniku (pushuje, popuje)
     std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
 
@@ -128,7 +134,8 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
     // dokud neni zasobnik prazdny, tak valim
     while (!open.empty()) {
         // kontrola pameti - pokud se blizim limitu, vracim prazdnou cestu
-        if (getCurrentRSS() > lower_mem_limit) {
+        if (++iterationCounter % checkInterval == 0
+            && getCurrentRSS() > lower_mem_limit) {
             return {};
         }
 
@@ -147,14 +154,12 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
         }
 
         // zkontroluji, jestli jsem uz stav videl (je v closed)
-        if (closed.find(currentState) == closed.end()) {
-            closed[currentState] = currentPath;
-
+        if (closed.insert(currentState).second) {
             // projdu kazdou akci, kterou muzu udelat
             for (const SearchAction& action : currentState->actions()) {
                 // vytvorim novy stav
-                SearchStatePtr nextState =
-                    std::make_shared<SearchState>(action.execute(*currentState));
+                SearchStatePtr nextState = std::make_shared<SearchState>(
+                    action.execute(*currentState));
 
                 // zkontroluji, jestli uz stav neni v closed mape
                 if (closed.find(nextState) == closed.end()) {
@@ -184,11 +189,11 @@ struct AStarState
     double f;
 };
 
-using PriorityQueue =
-    std::priority_queue<std::pair<AStarState, PathToState>,
-                        std::vector<std::pair<AStarState, PathToState>>,
-                        std::function<bool(const std::pair<AStarState, PathToState>,
-                                           const std::pair<AStarState, PathToState>)>>;
+using PriorityQueue = std::priority_queue<
+    std::pair<AStarState, PathToState>,
+    std::vector<std::pair<AStarState, PathToState>>,
+    std::function<bool(const std::pair<AStarState, PathToState>,
+                       const std::pair<AStarState, PathToState>)>>;
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
@@ -219,15 +224,16 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 
         closed.insert(currentNode.state);
         for (const SearchAction& action : currentNode.state->actions()) {
-            SearchStatePtr nextState =
-                std::make_shared<SearchState>(action.execute(*currentNode.state));
+            SearchStatePtr nextState = std::make_shared<SearchState>(
+                action.execute(*currentNode.state));
 
             if (closed.find(nextState) == closed.end()) {
                 PathToState nextPath = currentPath;
                 nextPath.push_back(std::make_shared<SearchAction>(action));
                 double g = currentNode.g + 1;
                 double f = g + compute_heuristic(*nextState, *heuristic_);
-                open.emplace(std::make_pair(AStarState { nextState, g, f }, nextPath));
+                open.emplace(
+                    std::make_pair(AStarState { nextState, g, f }, nextPath));
             }
         }
 
