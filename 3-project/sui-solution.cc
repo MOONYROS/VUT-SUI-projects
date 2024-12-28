@@ -15,7 +15,7 @@
 
 using SearchStatePtr = std::shared_ptr<SearchState>;
 using SearchActionPtr = std::shared_ptr<SearchAction>;
-using PathToState = std::vector<SearchActionPtr>;
+using PathToState = std::vector<SearchAction>;
 
 inline void printMemoryLimitExceeded()
 {
@@ -24,10 +24,14 @@ inline void printMemoryLimitExceeded()
     std::cerr << boldRed << "Memory limit reached" << reset << std::endl;
 }
 
+bool operator==(const SearchState& lhs, const SearchState& rhs)
+{
+    return lhs.state_ == rhs.state_;
+}
+
 // Hashovaci funkce - mix ruznych shiftu, oru, nasobeni prvocisly,...
 // Dost konzultovano s umelou inteligenci, mela by byt dostatecne unikatni a
 // rychla.
-
 std::size_t cardHash(const Card& card)
 {
     std::size_t h1 = std::hash<Color>()(card.color);
@@ -77,11 +81,6 @@ struct SearchStateHash
     }
 };
 
-bool operator==(const SearchState& lhs, const SearchState& rhs)
-{
-    return lhs.state_ == rhs.state_;
-}
-
 // Na prvni pohled zvlastni struktura, ale dava smysl. Protoze pouzivame shared
 // pointery pro ukladani stavu do unordered_set, tak se pri kolizi porovnava
 // obsah shared pointeru, coz je vlastne pouze adresa, to je spatne. V tomto
@@ -101,6 +100,14 @@ struct SearchStateWrapper
     bool operator==(const SearchStateWrapper& other) const
     {
         return *state == *other.state;
+    }
+};
+
+struct SearchStateWrapperHash
+{
+    std::size_t operator()(const SearchStateWrapper& state) const
+    {
+        return SearchStateHash()(state.state);
     }
 };
 
@@ -125,14 +132,6 @@ struct BFSTreeNode
 
 using BFSTreeNodePtr = std::shared_ptr<BFSTreeNode>;
 
-struct SearchStateWrapperHash
-{
-    std::size_t operator()(const SearchStateWrapper& state) const
-    {
-        return SearchStateHash()(state.state);
-    }
-};
-
 inline std::vector<SearchAction> retrieveSearchPath(BFSTreeNodePtr node)
 {
     std::vector<SearchAction> path;
@@ -151,6 +150,10 @@ using OpenQueue = std::queue<BFSTreeNodePtr>;
 std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
 {
+    constexpr int checkInterval = 100;
+    constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
+    std::uint64_t iterationCounter = 0;
+
     BFSClosedSet closed;
     OpenQueue open;
 
@@ -158,7 +161,6 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     open.emplace(std::make_shared<BFSTreeNode>(
         nullptr, nullptr, SearchStateWrapper(initPtr)));
 
-    std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
         BFSTreeNodePtr currentNode = open.front();
         open.pop();
@@ -186,8 +188,6 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
         // Mensi optimalizace - pristup do souboru je drahy. Parkrat jsem to
         // zkousel, 100 je cislo, se kterou se mi vzdy podchytilo, kdyz jsem se
         // blizil limitu. (Snad to tak bude fungovat i pri testovani.)
-        constexpr int checkInterval = 100;
-        constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
             printMemoryLimitExceeded();
@@ -197,68 +197,52 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     return {};
 }
 
+using OpenStack =
+    std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>>;
+using DFSClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
+
 std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
 {
-    std::size_t depthLimit = this->depth_limit_;
-
-    // vlastni limit pro pamet - 50MB pod hard limitem
-    std::size_t lowerMemLimit = this->mem_limit_ - 50 * 1024 * 1024;
-
-    // pocitadla na kontrolu pameti
+    const std::size_t depthLimit = this->depth_limit_;
+    const std::size_t lowerMemLimit = this->mem_limit_ - 50 * 1024 * 1024;
     constexpr int checkInterval = 100;
     std::uint64_t iterationCounter = 0;
 
-    // closed seznam - podle rady to delam spis jako map
-    std::unordered_set<SearchStatePtr, SearchStateHash> closed;
-    // zasobnik open, dfs chodi po zasobniku (pushuje, popuje)
-    std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
+    DFSClosedSet closed;
+    OpenStack open;
 
-    // inicializace jako v bfs
     SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
-    open.push({ initPtr, {} });
+    open.emplace(initPtr, std::vector<SearchAction>());
 
-    // dokud neni zasobnik prazdny, tak valim
     while (!open.empty()) {
-        // kontrola pameti - pokud se blizim limitu, vracim prazdnou cestu
-        if (++iterationCounter % checkInterval == 0
-            && getCurrentRSS() > lowerMemLimit) {
-            return {};
-        }
-
-        // vezmu si vrsek zasobniku
         auto [currentState, currentPath] = open.top();
         open.pop();
 
-        // pokud jsem presahl hloubku, tak pokracuji dal
         if (currentPath.size() > depthLimit) {
             continue;
         }
 
-        // zkontroluji, jestli jsem uz stav videl (je v closed)
-        if (closed.insert(currentState).second) {
-            // projdu kazdou akci, kterou muzu udelat
-            for (const SearchAction& action : currentState->actions()) {
-                // vytvorim novy stav
-                SearchStatePtr nextState = std::make_shared<SearchState>(
-                    action.execute(*currentState));
+        closed.insert(currentState);
 
-                // kontrola, jestli novy stav neni finalni
+        for (const SearchAction& action : currentState->actions()) {
+            SearchStatePtr nextState =
+                std::make_shared<SearchState>(action.execute(*currentState));
+
+            if (closed.find(nextState) == closed.end()) {
+                PathToState nextPath = currentPath;
+                nextPath.push_back(action);
+
                 if (nextState->isFinal()) {
-                    auto finalPath = currentPath;
-                    finalPath.push_back(action);
-                    return finalPath;
+                    return nextPath;
                 }
 
-                // zkontroluji, jestli uz stav neni v closed mape
-                if (closed.find(nextState) == closed.end()) {
-                    // vytvotim si novou cestu
-                    auto nextPath = currentPath;
-                    nextPath.push_back(action);
-
-                    // a vlozim na zasobnik stav i cestu
-                    open.push({ nextState, nextPath });
-                }
+                open.emplace(nextState, nextPath);
             }
+        }
+
+        if (++iterationCounter % checkInterval == 0
+            && getCurrentRSS() > lowerMemLimit) {
+            return {};
         }
     }
 
@@ -319,6 +303,10 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
         return lhs->f > rhs->f;
     };
 
+    constexpr int checkInterval = 100;
+    constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
+    std::uint64_t iterationCounter = 0;
+
     PriorityQueue open(sort);
     AStarClosedSet closed;
 
@@ -330,12 +318,9 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
                         0,
                         compute_heuristic(init_state, *this->heuristic_) }));
 
-    std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
         AStarTreeNodePtr currentNode = open.top();
         open.pop();
-
-        // Vložíme wrapper do closed
         closed.insert(currentNode->state);
 
         for (const SearchAction& action : currentNode->state.state->actions()) {
@@ -361,9 +346,6 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
             }
         }
 
-        // Taky stejna optimalizace jako u BFS.
-        constexpr int checkInterval = 100;
-        constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
             printMemoryLimitExceeded();
