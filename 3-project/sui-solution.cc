@@ -7,7 +7,6 @@
 #include <functional>
 #include <queue>
 #include <stack>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -143,11 +142,6 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
         auto [currentState, currentPath] = open.top();
         open.pop();
 
-        // pokud jsem v cili, tak koncim a vracim cestu
-        if (currentState->isFinal()) {
-            return currentPath;
-        }
-
         // pokud jsem presahl hloubku, tak pokracuji dal
         if (currentPath.size() > depth_limit) {
             continue;
@@ -160,6 +154,13 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
                 // vytvorim novy stav
                 SearchStatePtr nextState = std::make_shared<SearchState>(
                     action.execute(*currentState));
+
+                // kontrola, jestli novy stav neni finalni
+                if (nextState->isFinal()) {
+                    auto finalPath = currentPath;
+                    finalPath.push_back(action);
+                    return finalPath;
+                }
 
                 // zkontroluji, jestli uz stav neni v closed mape
                 if (closed.find(nextState) == closed.end()) {
