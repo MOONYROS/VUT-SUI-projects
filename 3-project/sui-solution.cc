@@ -2,9 +2,11 @@
 #include "search-interface.h"
 #include "search-strategies.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <queue>
 #include <stack>
 #include <unordered_set>
@@ -15,34 +17,52 @@ using SearchStatePtr = std::shared_ptr<SearchState>;
 using SearchActionPtr = std::shared_ptr<SearchAction>;
 using PathToState = std::vector<SearchActionPtr>;
 
+inline void printMemoryLimitExceeded()
+{
+    const std::string boldRed = "\033[1;31m";
+    const std::string reset = "\033[0m";
+    std::cerr << boldRed << "Memory limit reached" << reset << std::endl;
+}
+
+// Hashovaci funkce - mix ruznych shiftu, oru, nasobeni prvocisly,...
+// Dost konzultovano s umelou inteligenci, mela by byt dostatecne unikatni a
+// rychla.
+
 std::size_t cardHash(const Card& card)
 {
-    std::size_t h1 = std::hash<int>()(static_cast<int>(card.color));
+    std::size_t h1 = std::hash<Color>()(card.color);
     std::size_t h2 = std::hash<int>()(card.value);
 
-    return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    h1 = (h1 << 13) | (h1 >> (sizeof(std::size_t) * 8 - 13));
+    return h1 * 31 + h2;
 }
 
 std::size_t hash(const SearchState& state)
 {
     const GameState& gs = state.state_;
-    std::size_t hash = 0;
+    std::size_t hash = 17;
 
     for (const auto& home : gs.homes) {
         if (home.topCard().has_value()) {
-            hash ^= cardHash(*home.topCard());
+            std::size_t card_hash = cardHash(*home.topCard());
+            hash = (hash << 5) | (hash >> (sizeof(std::size_t) * 8 - 5));
+            hash = hash * 31 + card_hash;
         }
     }
 
     for (const auto& free_cell : gs.free_cells) {
         if (free_cell.topCard().has_value()) {
-            hash ^= cardHash(*free_cell.topCard());
+            std::size_t card_hash = cardHash(*free_cell.topCard());
+            hash = (hash << 5) | (hash >> (sizeof(std::size_t) * 8 - 5));
+            hash = hash * 31 + card_hash;
         }
     }
 
     for (const auto& stack : gs.stacks) {
         for (const auto& card : stack.storage()) {
-            hash ^= cardHash(card);
+            std::size_t card_hash = cardHash(card);
+            hash = (hash << 5) | (hash >> (sizeof(std::size_t) * 8 - 5));
+            hash = hash * 31 + card_hash;
         }
     }
 
@@ -62,48 +82,115 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
     return lhs.state_ == rhs.state_;
 }
 
-using ClosedSet = std::unordered_set<SearchStatePtr, SearchStateHash>;
-using OpenQueue = std::queue<std::pair<SearchStatePtr, PathToState>>;
+// Na prvni pohled zvlastni struktura, ale dava smysl. Protoze pouzivame shared
+// pointery pro ukladani stavu do unordered_set, tak se pri kolizi porovnava
+// obsah shared pointeru, coz je vlastne pouze adresa, to je spatne. V tomto
+// wrapperu je definovan operator==, ktery porovna samotne stavy, nejen
+// pointery na ne.
+// Stejnym principem se to da udelat pres (AStar|BFS)TreeNode, ale je tam velka
+// rezie pri kopiich, tohle je efektivnejsi reseni.
+struct SearchStateWrapper
+{
+    SearchStatePtr state;
+
+    SearchStateWrapper(SearchStatePtr state)
+        : state(state)
+    {
+    }
+
+    bool operator==(const SearchStateWrapper& other) const
+    {
+        return *state == *other.state;
+    }
+};
+
+// Optimalizace BFS - pouziti uzlu, ktery obsahuje pointer na rodice a akci, ze
+// ktere byl stav vytvoren. Jednoducha rekonstrukce cesty - poskakani od
+// koncoveho stavu smerem k inicialnimu.
+struct BFSTreeNode
+{
+    std::shared_ptr<BFSTreeNode> parent;
+    SearchActionPtr action;
+    SearchStateWrapper state;
+
+    BFSTreeNode(std::shared_ptr<BFSTreeNode> parent,
+                SearchActionPtr action,
+                SearchStateWrapper state)
+        : parent(parent),
+          action(action),
+          state(state)
+    {
+    }
+};
+
+using BFSTreeNodePtr = std::shared_ptr<BFSTreeNode>;
+
+struct SearchStateWrapperHash
+{
+    std::size_t operator()(const SearchStateWrapper& state) const
+    {
+        return SearchStateHash()(state.state);
+    }
+};
+
+inline std::vector<SearchAction> retrieveSearchPath(BFSTreeNodePtr node)
+{
+    std::vector<SearchAction> path;
+    while (node->action != nullptr) {
+        path.push_back(*node->action);
+        node = node->parent;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+using BFSClosedSet =
+    std::unordered_set<SearchStateWrapper, SearchStateWrapperHash>;
+using OpenQueue = std::queue<BFSTreeNodePtr>;
 
 std::vector<SearchAction> BreadthFirstSearch::solve(
     const SearchState& init_state)
 {
-    ClosedSet closed;
+    BFSClosedSet closed;
     OpenQueue open;
 
     SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
-    open.emplace(std::make_pair(initPtr, PathToState {}));
+    open.emplace(std::make_shared<BFSTreeNode>(
+        nullptr, nullptr, SearchStateWrapper(initPtr)));
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
-        auto [currentState, currentPath] = open.front();
+        BFSTreeNodePtr currentNode = open.front();
         open.pop();
 
-        closed.insert(currentState);
-        for (const SearchAction& action : currentState->actions()) {
-            SearchStatePtr nextState =
-                std::make_shared<SearchState>(action.execute(*currentState));
+        closed.insert(currentNode->state);
 
-            if (closed.find(nextState) == closed.end()) {
-                PathToState nextPath = currentPath;
-                nextPath.push_back(std::make_shared<SearchAction>(action));
+        for (const SearchAction& action : currentNode->state.state->actions()) {
+            SearchStatePtr nextState = std::make_shared<SearchState>(
+                action.execute(*currentNode->state.state));
+            SearchStateWrapper nextStateWrapper(nextState);
 
+            BFSTreeNodePtr nextNode = std::make_shared<BFSTreeNode>(
+                currentNode,
+                std::make_shared<SearchAction>(action),
+                nextStateWrapper);
+
+            if (closed.find(nextStateWrapper) == closed.end()) {
                 if (nextState->isFinal()) {
-                    std::vector<SearchAction> path;
-                    for (const auto& actionPtr : nextPath) {
-                        path.push_back(*actionPtr);
-                    }
-                    return path;
+                    return retrieveSearchPath(nextNode);
                 }
-
-                open.emplace(std::make_pair(nextState, nextPath));
+                open.emplace(nextNode);
             }
         }
 
+        // Mensi optimalizace - pristup do souboru je drahy. Parkrat jsem to
+        // zkousel, 100 je cislo, se kterou se mi vzdy podchytilo, kdyz jsem se
+        // blizil limitu. (Snad to tak bude fungovat i pri testovani.)
         constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            printMemoryLimitExceeded();
             return {};
         }
     }
@@ -183,65 +270,103 @@ double StudentHeuristic::distanceLowerBound(const GameState& state) const
     return 0;
 }
 
-struct AStarState
+// Pro A* stejna optimalizace jako u BFS pomoci uzlu; konstrukce stromu.
+struct AStarTreeNode
 {
-    SearchStatePtr state;
+    std::shared_ptr<AStarTreeNode> parent;
+    SearchActionPtr action;
+    SearchStateWrapper state;
     double g;
     double f;
+
+    AStarTreeNode(std::shared_ptr<AStarTreeNode> parent,
+                  SearchActionPtr action,
+                  SearchStateWrapper state,
+                  double g,
+                  double f)
+        : parent(parent),
+          action(action),
+          state(state),
+          g(g),
+          f(f)
+    {
+    }
 };
 
+using AStarTreeNodePtr = std::shared_ptr<AStarTreeNode>;
+
+inline std::vector<SearchAction> retrieveSearchPath(AStarTreeNodePtr node)
+{
+    std::vector<SearchAction> path;
+    while (node->action != nullptr) {
+        path.push_back(*node->action);
+        node = node->parent;
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
+using AStarClosedSet =
+    std::unordered_set<SearchStateWrapper, SearchStateWrapperHash>;
 using PriorityQueue = std::priority_queue<
-    std::pair<AStarState, PathToState>,
-    std::vector<std::pair<AStarState, PathToState>>,
-    std::function<bool(const std::pair<AStarState, PathToState>,
-                       const std::pair<AStarState, PathToState>)>>;
+    AStarTreeNodePtr,
+    std::vector<AStarTreeNodePtr>,
+    std::function<bool(const AStarTreeNodePtr&, const AStarTreeNodePtr&)>>;
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
-    auto sort = [](const std::pair<AStarState, PathToState>& lhs,
-                   const std::pair<AStarState, PathToState>& rhs) {
-        return lhs.first.f > rhs.first.f;
+    auto sort = [](const AStarTreeNodePtr& lhs, const AStarTreeNodePtr& rhs) {
+        return lhs->f > rhs->f;
     };
 
     PriorityQueue open(sort);
-    ClosedSet closed;
+    AStarClosedSet closed;
 
-    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    double h = compute_heuristic(init_state, *heuristic_);
-    open.emplace(std::make_pair(AStarState { init_ptr, 0, h }, PathToState {}));
+    SearchStatePtr initState = std::make_shared<SearchState>(init_state);
+    open.emplace(std::make_shared<AStarTreeNode>(
+        AStarTreeNode { nullptr,
+                        nullptr,
+                        SearchStateWrapper(initState),
+                        0,
+                        compute_heuristic(init_state, *this->heuristic_) }));
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
-        auto [currentNode, currentPath] = open.top();
+        AStarTreeNodePtr currentNode = open.top();
         open.pop();
 
-        if (currentNode.state->isFinal()) {
-            std::vector<SearchAction> path;
-            for (const auto& actionPtr : currentPath) {
-                path.push_back(*actionPtr);
-            }
-            return path;
-        }
+        // Vložíme wrapper do closed
+        closed.insert(currentNode->state);
 
-        closed.insert(currentNode.state);
-        for (const SearchAction& action : currentNode.state->actions()) {
+        for (const SearchAction& action : currentNode->state.state->actions()) {
             SearchStatePtr nextState = std::make_shared<SearchState>(
-                action.execute(*currentNode.state));
+                action.execute(*currentNode->state.state));
 
-            if (closed.find(nextState) == closed.end()) {
-                PathToState nextPath = currentPath;
-                nextPath.push_back(std::make_shared<SearchAction>(action));
-                double g = currentNode.g + 1;
-                double f = g + compute_heuristic(*nextState, *heuristic_);
-                open.emplace(
-                    std::make_pair(AStarState { nextState, g, f }, nextPath));
+            SearchStateWrapper nextStateWrapper(nextState);
+
+            AStarTreeNodePtr nextNode = std::make_shared<AStarTreeNode>(
+                AStarTreeNode { currentNode, nullptr, nextStateWrapper, 0, 0 });
+
+            if (closed.find(nextStateWrapper) == closed.end()) {
+                nextNode->action = std::make_shared<SearchAction>(action);
+                nextNode->g = currentNode->g + 1;
+                nextNode->f = nextNode->g
+                              + compute_heuristic(*nextNode->state.state,
+                                                  *this->heuristic_);
+
+                if (nextState->isFinal()) {
+                    return retrieveSearchPath(nextNode);
+                }
+                open.emplace(nextNode);
             }
         }
 
-        constexpr int checkInterval = 1000;
+        // Taky stejna optimalizace jako u BFS.
+        constexpr int checkInterval = 100;
         constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
         if (++iterationCounter % checkInterval == 0
             && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            printMemoryLimitExceeded();
             return {};
         }
     }
