@@ -83,39 +83,52 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
     return lhs.state_ == rhs.state_;
 }
 
-// Optimalizace BFS - pouziti uzlu, ktery obsahuje pointer na rodice a akci, ze
-// ktere byl stav vytvoren. Jednoducha rekonstrukce cesty - poskakani od
-// koncoveho stavu smerem k inicialnimu.
-
-struct BFSTreeNode
+// Na prvni pohled zvlastni struktura, ale dava smysl. Protoze pouzivame shared
+// pointery pro ukladani stavu do unordered_set, tak se pri kolizi porovnava
+// obsah shared pointeru, coz je vlastne pouze adresa, to je spatne. V tomto
+// wrapperu je definovan operator==, ktery porovna samotne stavy, nejen
+// pointery na ne.
+struct SearchStateWrapper
 {
-    std::shared_ptr<BFSTreeNode> parent;
-    SearchActionPtr action;
-    std::shared_ptr<SearchState> state;
+    SearchStatePtr state;
 
-    BFSTreeNode(std::shared_ptr<BFSTreeNode> parent,
-                SearchActionPtr action,
-                std::shared_ptr<SearchState> state)
-        : parent(parent),
-          action(action),
-          state(state)
+    SearchStateWrapper(SearchStatePtr state)
+        : state(state)
     {
     }
 
-    bool operator==(const BFSTreeNode& other) const
+    bool operator==(const SearchStateWrapper& other) const
     {
         return *state == *other.state;
     }
 };
 
+// Optimalizace BFS - pouziti uzlu, ktery obsahuje pointer na rodice a akci, ze
+// ktere byl stav vytvoren. Jednoducha rekonstrukce cesty - poskakani od
+// koncoveho stavu smerem k inicialnimu.
+struct BFSTreeNode
+{
+    std::shared_ptr<BFSTreeNode> parent;
+    SearchActionPtr action;
+    SearchStateWrapper state;
+
+    BFSTreeNode(std::shared_ptr<BFSTreeNode> parent,
+                SearchActionPtr action,
+                SearchStateWrapper state)
+        : parent(parent),
+          action(action),
+          state(state)
+    {
+    }
+};
+
 using BFSTreeNodePtr = std::shared_ptr<BFSTreeNode>;
 
-template<typename T>
-struct TreeNodeHash
+struct SearchStateWrapperHash
 {
-    std::size_t operator()(const T& node) const
+    std::size_t operator()(const SearchStateWrapper& state) const
     {
-        return SearchStateHash()(node->state);
+        return SearchStateHash()(state.state);
     }
 };
 
@@ -131,7 +144,7 @@ inline std::vector<SearchAction> retrieveSearchPath(BFSTreeNodePtr node)
 }
 
 using BFSClosedSet =
-    std::unordered_set<BFSTreeNodePtr, TreeNodeHash<BFSTreeNodePtr>>;
+    std::unordered_set<SearchStateWrapper, SearchStateWrapperHash>;
 using OpenQueue = std::queue<BFSTreeNodePtr>;
 
 std::vector<SearchAction> BreadthFirstSearch::solve(
@@ -141,30 +154,30 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
     OpenQueue open;
 
     SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
-    open.emplace(std::make_shared<BFSTreeNode>(nullptr, nullptr, initPtr));
+    open.emplace(std::make_shared<BFSTreeNode>(
+        nullptr, nullptr, SearchStateWrapper(initPtr)));
 
     std::uint64_t iterationCounter = 0;
     while (!open.empty()) {
-        BFSTreeNodePtr currentState = open.front();
+        BFSTreeNodePtr currentNode = open.front();
         open.pop();
 
-        closed.insert(currentState);
-        for (const SearchAction& action : currentState->state->actions()) {
+        closed.insert(currentNode->state);
+
+        for (const SearchAction& action : currentNode->state.state->actions()) {
             SearchStatePtr nextState = std::make_shared<SearchState>(
-                action.execute(*currentState->state));
+                action.execute(*currentNode->state.state));
+            SearchStateWrapper nextStateWrapper(nextState);
 
             BFSTreeNodePtr nextNode = std::make_shared<BFSTreeNode>(
-                currentState,
+                currentNode,
                 std::make_shared<SearchAction>(action),
-                nextState);
+                nextStateWrapper);
 
-            if (closed.find(nextNode) == closed.end()) {
-                // Optimalizace - nez vubec dam uzel do open, zkontroluji,
-                // jestli uz neni cilovy.
+            if (closed.find(nextStateWrapper) == closed.end()) {
                 if (nextState->isFinal()) {
                     return retrieveSearchPath(nextNode);
                 }
-
                 open.emplace(nextNode);
             }
         }
@@ -259,13 +272,13 @@ struct AStarTreeNode
 {
     std::shared_ptr<AStarTreeNode> parent;
     SearchActionPtr action;
-    SearchStatePtr state;
+    SearchStateWrapper state;
     double g;
     double f;
 
     AStarTreeNode(std::shared_ptr<AStarTreeNode> parent,
                   SearchActionPtr action,
-                  SearchStatePtr state,
+                  SearchStateWrapper state,
                   double g,
                   double f)
         : parent(parent),
@@ -274,11 +287,6 @@ struct AStarTreeNode
           g(g),
           f(f)
     {
-    }
-
-    bool operator==(const AStarTreeNode& other) const
-    {
-        return *state == *other.state;
     }
 };
 
@@ -296,7 +304,7 @@ inline std::vector<SearchAction> retrieveSearchPath(AStarTreeNodePtr node)
 }
 
 using AStarClosedSet =
-    std::unordered_set<AStarTreeNodePtr, TreeNodeHash<AStarTreeNodePtr>>;
+    std::unordered_set<SearchStateWrapper, SearchStateWrapperHash>;
 using PriorityQueue = std::priority_queue<
     AStarTreeNodePtr,
     std::vector<AStarTreeNodePtr>,
@@ -304,9 +312,6 @@ using PriorityQueue = std::priority_queue<
 
 std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 {
-    // Vsechno stejny jako u BFS, vcetne optimalizaci, jen s tim, ze pouzivame
-    // prioritni frontu (max heap), sortujici funkce pod timto komentarem. Jeste
-    // se navic pocitaji f-hodnoty.
     auto sort = [](const AStarTreeNodePtr& lhs, const AStarTreeNodePtr& rhs) {
         return lhs->f > rhs->f;
     };
@@ -318,7 +323,7 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
     open.emplace(std::make_shared<AStarTreeNode>(
         AStarTreeNode { nullptr,
                         nullptr,
-                        initState,
+                        SearchStateWrapper(initState),
                         0,
                         compute_heuristic(init_state, *this->heuristic_) }));
 
@@ -327,27 +332,25 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
         AStarTreeNodePtr currentNode = open.top();
         open.pop();
 
-        closed.insert(currentNode);
-        for (const SearchAction& action : currentNode->state->actions()) {
+        // Vložíme wrapper do closed
+        closed.insert(currentNode->state);
+
+        for (const SearchAction& action : currentNode->state.state->actions()) {
             SearchStatePtr nextState = std::make_shared<SearchState>(
-                action.execute(*currentNode->state));
+                action.execute(*currentNode->state.state));
 
-            // Novy uzel, pro ktery jen zkontrolujeme, jestli jeho stav je v
-            // closed
+            SearchStateWrapper nextStateWrapper(nextState);
+
             AStarTreeNodePtr nextNode = std::make_shared<AStarTreeNode>(
-                AStarTreeNode { currentNode, nullptr, nextState, 0, 0 });
+                AStarTreeNode { currentNode, nullptr, nextStateWrapper, 0, 0 });
 
-            if (closed.find(nextNode) == closed.end()) {
-                // Pokud stav jeste neni v closed, dopocitej hodnoty pro novy
-                // uzel -- aby se pripadne nepocitaly zbytecne pred podminkou
+            if (closed.find(nextStateWrapper) == closed.end()) {
                 nextNode->action = std::make_shared<SearchAction>(action);
                 nextNode->g = currentNode->g + 1;
-                nextNode->f =
-                    nextNode->g
-                    + compute_heuristic(*nextNode->state, *this->heuristic_);
+                nextNode->f = nextNode->g
+                              + compute_heuristic(*nextNode->state.state,
+                                                  *this->heuristic_);
 
-                // Taky stejna optimalizace jako u BFS - kontrola, jestli synove
-                // jsou koncovymi uzly nez jdou do open.
                 if (nextState->isFinal()) {
                     return retrieveSearchPath(nextNode);
                 }
