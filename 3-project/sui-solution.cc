@@ -88,6 +88,8 @@ bool operator==(const SearchState& lhs, const SearchState& rhs)
 // obsah shared pointeru, coz je vlastne pouze adresa, to je spatne. V tomto
 // wrapperu je definovan operator==, ktery porovna samotne stavy, nejen
 // pointery na ne.
+// Stejnym principem se to da udelat pres (AStar|BFS)TreeNode, ale je tam velka
+// rezie pri kopiich, tohle je efektivnejsi reseni.
 struct SearchStateWrapper
 {
     SearchStatePtr state;
