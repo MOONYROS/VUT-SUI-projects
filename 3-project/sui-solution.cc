@@ -199,14 +199,14 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
 
 std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
 {
-    std::size_t depth_limit = this->depth_limit_;
+    std::size_t depthLimit = this->depth_limit_;
 
     // vlastni limit pro pamet - 50MB pod hard limitem
-    std::size_t lower_mem_limit = this->mem_limit_ - 50 * 1024 * 1024;
+    std::size_t lowerMemLimit = this->mem_limit_ - 50 * 1024 * 1024;
 
     // pocitadla na kontrolu pameti
     constexpr int checkInterval = 100;
-    int iterationCounter = 0;
+    std::uint64_t iterationCounter = 0;
 
     // closed seznam - podle rady to delam spis jako map
     std::unordered_set<SearchStatePtr, SearchStateHash> closed;
@@ -214,14 +214,14 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
     std::stack<std::pair<SearchStatePtr, std::vector<SearchAction>>> open;
 
     // inicializace jako v bfs
-    SearchStatePtr init_ptr = std::make_shared<SearchState>(init_state);
-    open.push({ init_ptr, {} });
+    SearchStatePtr initPtr = std::make_shared<SearchState>(init_state);
+    open.push({ initPtr, {} });
 
     // dokud neni zasobnik prazdny, tak valim
     while (!open.empty()) {
         // kontrola pameti - pokud se blizim limitu, vracim prazdnou cestu
         if (++iterationCounter % checkInterval == 0
-            && getCurrentRSS() > lower_mem_limit) {
+            && getCurrentRSS() > lowerMemLimit) {
             return {};
         }
 
@@ -230,7 +230,7 @@ std::vector<SearchAction> DepthFirstSearch::solve(const SearchState& init_state)
         open.pop();
 
         // pokud jsem presahl hloubku, tak pokracuji dal
-        if (currentPath.size() > depth_limit) {
+        if (currentPath.size() > depthLimit) {
             continue;
         }
 
