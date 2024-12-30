@@ -152,6 +152,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
 {
     constexpr int checkInterval = 100;
     constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
+    const std::size_t lowerMemLimit = this->mem_limit_ - fiftyMB;
     std::uint64_t iterationCounter = 0;
 
     BFSClosedSet closed;
@@ -189,7 +190,7 @@ std::vector<SearchAction> BreadthFirstSearch::solve(
         // zkousel, 100 je cislo, se kterou se mi vzdy podchytilo, kdyz jsem se
         // blizil limitu. (Snad to tak bude fungovat i pri testovani.)
         if (++iterationCounter % checkInterval == 0
-            && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            && getCurrentRSS() > lowerMemLimit) {
             printMemoryLimitExceeded();
             return {};
         }
@@ -305,6 +306,7 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
 
     constexpr int checkInterval = 100;
     constexpr std::size_t fiftyMB = 50 * 1024 * 1024;
+    const std::size_t lowerMemLimit = this->mem_limit_ - fiftyMB;
     std::uint64_t iterationCounter = 0;
 
     PriorityQueue open(sort);
@@ -347,7 +349,7 @@ std::vector<SearchAction> AStarSearch::solve(const SearchState& init_state)
         }
 
         if (++iterationCounter % checkInterval == 0
-            && getCurrentRSS() > (this->mem_limit_ - fiftyMB)) {
+            && getCurrentRSS() > lowerMemLimit) {
             printMemoryLimitExceeded();
             return {};
         }
