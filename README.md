@@ -1,4 +1,4 @@
-# VUT Artificial Intelligence and Machine Learning
+# VUT Artificial Intelligence and Machine Learning (2024/2025)
 
 ## Authors
 
